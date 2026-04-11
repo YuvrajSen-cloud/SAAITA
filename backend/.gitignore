@@ -1,0 +1,11 @@
+# Environment variables
+.env
+
+__pycache__/
+*.pyc
+*.pyo
+saaita.db
+*.db
+.env
+venv/
+env/
