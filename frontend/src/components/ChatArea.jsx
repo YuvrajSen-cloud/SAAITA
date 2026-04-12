@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import LearningPathUI from './LearningPathUI';
+import ChecklistUI from './ChecklistUI';
 import { apiChatMessage, apiChatHistory, apiChatClear } from '../services/api';
 
-// ── JSON parser for learning path responses ──────────────
+// ── JSON parser for AI UI responses ──────────────
 const parseLearningPathJSON = (text) => {
     if (typeof text !== 'string') return { json: null, text };
     try {
@@ -255,7 +256,9 @@ const ChatArea = () => {
                                                                 {parsed.text}
                                                             </span>
                                                         )}
-                                                        <LearningPathUI data={parsed.json} />
+                                                        {parsed.json.type === 'checklist' 
+                                                            ? <ChecklistUI data={parsed.json} />
+                                                            : <LearningPathUI data={parsed.json} />}
                                                     </div>
                                                 );
                                             }
