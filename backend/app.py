@@ -462,7 +462,7 @@ def server_error(e):
 if __name__ == "__main__":
     init_db()
     if not GEMINI_API_KEY:
-        print("\n⚠️  WARNING: GEMINI_API_KEY is not set in .env — AI chat will not work!\n")
+        print("\n[WARNING] GEMINI_API_KEY is not set in .env - AI chat will not work!\n")
     else:
-        print(f"\n✅ GEMINI_API_KEY loaded — AI chat enabled\n")
+        print("\n[OK] GEMINI_API_KEY loaded - AI chat enabled\n")
     app.run(port=5000, debug=FLASK_DEBUG)

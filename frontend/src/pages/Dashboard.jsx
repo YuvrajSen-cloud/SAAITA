@@ -10,7 +10,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [activeView, setActiveView] = useState('dashboard');
+  const [activeView, setActiveView] = useState('chat');
 
   useEffect(() => {
     apiGetMe()
