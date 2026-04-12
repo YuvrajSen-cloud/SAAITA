@@ -127,17 +127,18 @@ def signup():
 
     pwd_hash = generate_password_hash(password)
 
+    conn = get_db()
     try:
-        conn = get_db()
         c = conn.execute(
             "INSERT INTO users (full_name, email, password_hash) VALUES (?, ?, ?)",
             (full_name, email, pwd_hash)
         )
         user_id = c.lastrowid
         conn.commit()
-        conn.close()
     except sqlite3.IntegrityError:
         return jsonify({"error": "This email is already registered."}), 409
+    finally:
+        conn.close()
 
     session_id = create_session(user_id)
     return jsonify({

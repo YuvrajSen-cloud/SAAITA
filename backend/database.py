@@ -1,7 +1,8 @@
 import sqlite3
 
 def get_db():
-    conn = sqlite3.connect("saaita.db")
+    conn = sqlite3.connect("saaita.db", timeout=15)
+    conn.execute("PRAGMA journal_mode=WAL;")
     conn.row_factory = sqlite3.Row
     return conn
 
