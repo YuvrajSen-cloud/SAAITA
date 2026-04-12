@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiOnboarding } from '../services/api';
 
@@ -77,51 +77,59 @@ const STEPS = [
 export default function Onboarding() {
   const navigate = useNavigate();
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
-  const [answers, setAnswers] = useState({});
   const [animating, setAnimating] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // ✅ Use a ref for answers to avoid stale closure in finishOnboarding
+  const answersRef = useRef({});
+
   const step = STEPS[currentStepIndex];
 
+  // Auto-advance intro message
   useEffect(() => {
-    // Intro message auto-advance
     if (step.id === 'intro') {
-      const timer = setTimeout(() => handleNext(), 3000);
+      const timer = setTimeout(() => advanceStep(), 3000);
       return () => clearTimeout(timer);
     }
   }, [currentStepIndex]);
 
-  const handleNext = async (value = null) => {
-    if (value !== null) {
-      setAnswers(prev => ({ ...prev, [step.id]: value }));
+  const advanceStep = (stepId = null, value = null) => {
+    // Record the answer immediately into the ref (no stale closure)
+    if (stepId && value !== null) {
+      answersRef.current = { ...answersRef.current, [stepId]: value };
     }
 
     setAnimating(true);
-    setTimeout(async () => {
+    setTimeout(() => {
       if (currentStepIndex < STEPS.length - 1) {
         setCurrentStepIndex(prev => prev + 1);
         setAnimating(false);
       } else {
-        await finishOnboarding(answers, value);
+        // Last step — submit
+        finishOnboarding();
       }
-    }, 400); // Wait for fade out
+    }, 380);
   };
 
-  const finishOnboarding = async (currentAnswers, lastValue) => {
+  const handleOptionClick = (value) => {
+    advanceStep(step.id, value);
+  };
+
+  const finishOnboarding = async () => {
     setSaving(true);
     try {
-      const finalAnswers = { ...currentAnswers, confidence: lastValue };
-      await apiOnboarding({ answers: finalAnswers });
+      // answersRef.current always has all answers — no stale closure issue
+      await apiOnboarding({ answers: answersRef.current });
       navigate('/dashboard', { replace: true });
-    } catch (err) {
+    } catch {
       alert("Failed to save preferences. Please try again.");
       setAnimating(false);
       setSaving(false);
     }
   };
 
-  const currentOptions = step.dynamicOptions ? step.dynamicOptions(answers) : step.options;
-  const currentQuestionText = step.dynamicQuestion ? step.dynamicQuestion(answers) : step.question;
+  const currentOptions = step.dynamicOptions ? step.dynamicOptions(answersRef.current) : step.options;
+  const currentQuestionText = step.dynamicQuestion ? step.dynamicQuestion(answersRef.current) : step.question;
 
   return (
     <div className="min-h-screen relative overflow-hidden flex items-center justify-center font-body selection:bg-primary/30">
@@ -134,14 +142,13 @@ export default function Onboarding() {
           playsInline
           className="w-full h-full object-cover scale-105"
           src="/daisy-flower.mp4"
-        ></video>
-        {/* Soft elegant overlay */}
-        <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"></div>
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30"></div>
+        />
+        <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30" />
       </div>
 
       <div className={`relative z-10 w-full max-w-xl p-8 flex flex-col items-center justify-center min-h-[400px] transition-opacity duration-300 ease-in-out ${animating ? 'opacity-0' : 'opacity-100'}`}>
-        
+
         {step.type === 'message' && (
           <div className="text-center space-y-6">
             <h1 className="text-3xl md:text-5xl font-headline font-black text-white tracking-tight leading-tight">
@@ -149,11 +156,11 @@ export default function Onboarding() {
             </h1>
             {step.id === 'outro' && (
               <button
-                onClick={() => handleNext()}
+                onClick={() => advanceStep()}
                 disabled={saving}
-                className="mt-8 px-8 py-3.5 bg-white text-black font-headline font-black tracking-[0.2em] uppercase text-xs rounded-full hover:scale-105 active:scale-95 transition-transform"
+                className="mt-8 px-8 py-3.5 bg-white text-black font-headline font-black tracking-[0.2em] uppercase text-xs rounded-full hover:scale-105 active:scale-95 transition-transform disabled:opacity-60"
               >
-                {saving ? 'PREPARING...' : "LET'S GO"}
+                {saving ? "PREPARING..." : "LET'S GO"}
               </button>
             )}
           </div>
@@ -164,12 +171,12 @@ export default function Onboarding() {
             <h2 className="text-2xl md:text-4xl font-headline font-bold text-white text-center mb-10 tracking-tight !leading-tight">
               {currentQuestionText}
             </h2>
-            
+
             <div className="flex flex-col gap-3 w-full max-w-md mx-auto">
               {currentOptions.map((opt) => (
                 <button
                   key={opt.value}
-                  onClick={() => handleNext(opt.value)}
+                  onClick={() => handleOptionClick(opt.value)}
                   className="w-full p-4 flex items-center justify-between bg-black/40 backdrop-blur-md border border-white/10 rounded-2xl text-left text-white group hover:bg-white/10 hover:border-white/30 transition-all duration-300 active:scale-[0.98]"
                 >
                   <span className="font-headline font-semibold text-[15px] tracking-wide">{opt.label}</span>
@@ -182,21 +189,21 @@ export default function Onboarding() {
               ))}
             </div>
 
-            {/* Stepper Dots (only for questions) */}
+            {/* Stepper Dots */}
             <div className="flex justify-center gap-2 mt-12">
               {STEPS.filter(s => s.type === 'question').map((s, idx) => {
-                const questionIndex = STEPS.filter(s => s.type === 'question').findIndex(x => x.id === step.id);
+                const questionSteps = STEPS.filter(s => s.type === 'question');
+                const currentQuestionIdx = questionSteps.findIndex(x => x.id === step.id);
                 return (
-                  <div 
-                    key={idx} 
-                    className={`h-1.5 rounded-full transition-all duration-500 ${idx === questionIndex ? 'w-8 bg-white' : idx < questionIndex ? 'w-2 bg-white/50' : 'w-2 bg-white/20'}`}
+                  <div
+                    key={idx}
+                    className={`h-1.5 rounded-full transition-all duration-500 ${idx === currentQuestionIdx ? 'w-8 bg-white' : idx < currentQuestionIdx ? 'w-2 bg-white/50' : 'w-2 bg-white/20'}`}
                   />
                 );
               })}
             </div>
           </div>
         )}
-
       </div>
     </div>
   );

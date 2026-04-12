@@ -50,6 +50,19 @@ const RoadmapBlock = ({ difficulty, steps }) => {
 };
 
 const LearningPathUI = ({ data }) => {
+    // Handle null / empty data gracefully
+    if (!data) {
+        return (
+            <div className="glass-panel rounded-2xl p-8 text-center">
+                <div className="text-4xl mb-4">🗺️</div>
+                <h3 className="font-headline font-bold text-on-surface text-lg mb-2">No learning path yet</h3>
+                <p className="text-on-surface-variant text-sm font-body">
+                    Go to Chat and ask SAAITA: <em>"Give me a learning roadmap for [topic]"</em> — it will appear here.
+                </p>
+            </div>
+        );
+    }
+
     let roadmaps = [];
     
     const isDifficultyFormat = Array.isArray(data) && data.length > 0 && data[0].difficulty && data[0].path;

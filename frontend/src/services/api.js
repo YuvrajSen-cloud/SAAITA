@@ -28,13 +28,14 @@ async function safeFetch(url, options) {
     const res = await fetch(url, options);
     return await handleResponse(res);
   } catch (err) {
-    // Network error (backend offline / no internet)
     if (err instanceof TypeError && err.message.includes("fetch")) {
       throw new Error("Cannot connect to the server. Please make sure the backend is running.");
     }
     throw err;
   }
 }
+
+// ─── Auth ───────────────────────────────────────────────
 
 export async function apiSignup({ fullName, email, password }) {
   const data = await safeFetch(`${BASE_URL}/api/auth/signup`, {
@@ -87,3 +88,25 @@ export async function apiOnboarding(data) {
   return res;
 }
 
+// ─── Chat ────────────────────────────────────────────────
+
+export async function apiChatMessage({ prompt, images = [] }) {
+  return await safeFetch(`${BASE_URL}/api/chat/message`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ prompt, images }),
+  });
+}
+
+export async function apiChatHistory() {
+  return await safeFetch(`${BASE_URL}/api/chat/history`, {
+    headers: authHeaders(),
+  });
+}
+
+export async function apiChatClear() {
+  return await safeFetch(`${BASE_URL}/api/chat/clear`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+}
