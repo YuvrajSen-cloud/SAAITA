@@ -19,7 +19,7 @@ load_dotenv()
 FLASK_DEBUG = os.getenv("FLASK_DEBUG", "false").lower() == "true"
 ALLOWED_ORIGINS = os.getenv(
     "ALLOWED_ORIGINS",
-    "http://localhost:5173,http://localhost:5174,http://localhost:5175"
+    "http://localhost:5173,http://localhost:5174,http://localhost:5175,http://127.0.0.1:5173,http://127.0.0.1:5174,http://127.0.0.1:5175"
 ).split(",")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
@@ -61,6 +61,14 @@ def get_gemini_model(user_profile: str = ""):
             base_instruction = f.read().strip()
 
         full_instruction = base_instruction
+        
+        user_prompt_path = os.path.join(os.path.dirname(__file__), "user_prompt.txt")
+        if os.path.exists(user_prompt_path):
+            with open(user_prompt_path, "r", encoding="utf-8") as f:
+                user_instruction = f.read().strip()
+                if user_instruction:
+                    full_instruction += f"\n\nUSER CUSTOM INSTRUCTIONS:\n{user_instruction}"
+
         if user_profile:
             full_instruction += f"\n\nUSER PROFILE: {user_profile}"
 
@@ -439,6 +447,42 @@ def chat_clear():
 
     return jsonify({"success": True, "chat_group_id": new_group_id})
 
+
+@app.route("/api/system_prompt", methods=["GET"])
+def get_system_prompt():
+    session_id = request.headers.get("X-Session-Id")
+    if not session_id or not get_session_user(session_id):
+        return jsonify({"error": "Unauthorized"}), 401
+        
+    prompt_path = os.path.join(os.path.dirname(__file__), "user_prompt.txt")
+    if os.path.exists(prompt_path):
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            return jsonify({"prompt": f.read()})
+    return jsonify({"prompt": ""})
+
+@app.route("/api/system_prompt", methods=["POST"])
+def update_system_prompt():
+    session_id = request.headers.get("X-Session-Id")
+    if not session_id or not get_session_user(session_id):
+        return jsonify({"error": "Unauthorized"}), 401
+        
+    data = request.json or {}
+    new_prompt = data.get("prompt", "")
+    
+    prompt_path = os.path.join(os.path.dirname(__file__), "user_prompt.txt")
+    with open(prompt_path, "w", encoding="utf-8") as f:
+        f.write(new_prompt)
+        
+    # Reinitialize active AI sessions to apply new system prompt
+    for sid, ai_sess in list(ai_sessions.items()):
+        user = get_session_user(sid)
+        if user:
+            model = get_gemini_model(user.get("onboarding_data", ""))
+            if model:
+                history = ai_sess["chat"].history if "chat" in ai_sess else []
+                ai_sess["chat"] = model.start_chat(history=history)
+                
+    return jsonify({"success": True})
 
 # =========================================================
 # ERROR HANDLERS

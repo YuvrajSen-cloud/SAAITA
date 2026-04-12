@@ -56,6 +56,33 @@ export default function Auth() {
     setFormData({ fullName: '', email: '', password: '', confirmPassword: '' });
   };
 
+  const handleTestLogin = async () => {
+    setLoading(true);
+    setServerError('');
+    try {
+      let res;
+      try {
+        res = await apiLogin({ email: 'test@saaita.com', password: 'Password123' });
+      } catch (loginErr) {
+        res = await apiSignup({
+          fullName: 'Test User',
+          email: 'test@saaita.com',
+          password: 'Password123'
+        });
+      }
+      
+      if (res.user && res.user.is_onboarded) {
+        navigate('/dashboard');
+      } else {
+        navigate('/onboarding');
+      }
+    } catch (err) {
+      setServerError(err.message || 'Test login failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setServerError('');
@@ -212,6 +239,16 @@ export default function Auth() {
           <div className="space-y-2">
             {[
               {
+                label: "Login as Test User",
+                icon: (
+                  <svg viewBox="0 0 24 24" className="w-[18px] h-[18px]" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                    <circle cx="12" cy="7" r="4" />
+                  </svg>
+                ),
+                action: handleTestLogin
+              },
+              {
                 label: "Continue with Google",
                 icon: (
                   <svg viewBox="0 0 24 24" className="w-3.5 h-3.5">
@@ -238,11 +275,11 @@ export default function Auth() {
                   </svg>
                 )
               }
-            ].map(({ label, icon }) => (
+            ].map(({ label, icon, action }) => (
               <button
                 key={label}
                 type="button"
-                onClick={() => setServerError(`${label} is coming soon.`)}
+                onClick={action || (() => setServerError(`${label} is coming soon.`))}
                 className="w-full flex items-center justify-center gap-2 py-2 bg-[#2d2d2d]/90 backdrop-blur-md rounded-full border border-white/10 hover:bg-[#3d3d3d] active:scale-[0.98] transition-all"
               >
                 {icon}

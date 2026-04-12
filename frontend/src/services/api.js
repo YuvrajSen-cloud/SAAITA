@@ -1,4 +1,4 @@
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const BASE_URL = "http://127.0.0.1:5000";
 
 function getSessionId() {
   return localStorage.getItem("session_id");
@@ -108,5 +108,21 @@ export async function apiChatClear() {
   return await safeFetch(`${BASE_URL}/api/chat/clear`, {
     method: "POST",
     headers: authHeaders(),
+  });
+}
+
+// ─── Settings ─────────────────────────────────────────────
+
+export async function apiGetSystemPrompt() {
+  return await safeFetch(`${BASE_URL}/api/system_prompt`, {
+    headers: authHeaders(),
+  });
+}
+
+export async function apiUpdateSystemPrompt(prompt) {
+  return await safeFetch(`${BASE_URL}/api/system_prompt`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ prompt }),
   });
 }
