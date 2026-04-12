@@ -126,3 +126,17 @@ export async function apiUpdateSystemPrompt(prompt) {
     body: JSON.stringify({ prompt }),
   });
 }
+
+export async function apiGetApiKeys() {
+  return await safeFetch(`${BASE_URL}/api/settings/keys`, {
+    headers: authHeaders(),
+  });
+}
+
+export async function apiUpdateApiKeys(keys) {
+  return await safeFetch(`${BASE_URL}/api/settings/keys`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ keys }),
+  });
+}

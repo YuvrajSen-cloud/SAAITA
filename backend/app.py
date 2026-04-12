@@ -484,6 +484,59 @@ def update_system_prompt():
                 
     return jsonify({"success": True})
 
+
+def read_env_file():
+    env_path = os.path.join(os.path.dirname(__file__), ".env")
+    env_keys = {}
+    if os.path.exists(env_path):
+        with open(env_path, "r", encoding="utf-8") as f:
+            for line in f:
+                if "=" in line and not line.strip().startswith("#"):
+                    k, v = line.strip().split("=", 1)
+                    env_keys[k] = v
+    return env_keys
+
+@app.route("/api/settings/keys", methods=["GET"])
+def get_api_keys():
+    session_id = request.headers.get("X-Session-Id")
+    if not session_id or not get_session_user(session_id):
+        return jsonify({"error": "Unauthorized"}), 401
+    all_keys = read_env_file()
+    api_keys = [{"name": k, "value": v} for k,v in all_keys.items() if k.endswith("_API_KEY")]
+    if not any(k["name"] == "GEMINI_API_KEY" for k in api_keys):
+        api_keys.append({"name": "GEMINI_API_KEY", "value": ""})
+    return jsonify({"keys": api_keys})
+
+@app.route("/api/settings/keys", methods=["POST"])
+def update_api_keys():
+    session_id = request.headers.get("X-Session-Id")
+    if not session_id or not get_session_user(session_id):
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    data = request.json or {}
+    new_keys = data.get("keys", [])
+    
+    env_path = os.path.join(os.path.dirname(__file__), ".env")
+    all_keys = read_env_file()
+    for kv in new_keys:
+        k = kv.get("name", "").strip()
+        v = kv.get("value", "").strip()
+        if k:
+            all_keys[k] = v
+            # Immediately apply to current python context if it's GEMINI
+            if k == "GEMINI_API_KEY":
+                os.environ["GEMINI_API_KEY"] = v
+                global GEMINI_API_KEY
+                GEMINI_API_KEY = v
+
+    with open(env_path, "w", encoding="utf-8") as f:
+        for k, v in all_keys.items():
+            f.write(f"{k}={v}\n")
+            
+    # Optional: Reinitialize active sessions if GEMINI key changed (omitted for brevity unless strictly needed, updating env is enough for next calls)
+            
+    return jsonify({"success": True})
+
 # =========================================================
 # ERROR HANDLERS
 # =========================================================
