@@ -50,27 +50,33 @@ SESSION_DURATION_DAYS = 7
 # GEMINI AI SETUP
 # =========================================================
 
+def get_system_instruction(user_profile: str = ""):
+    prompt_path = os.path.join(os.path.dirname(__file__), "system_prompt.txt")
+    base_instruction = ""
+    if os.path.exists(prompt_path):
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            base_instruction = f.read().strip()
+
+    full_instruction = base_instruction
+    
+    user_prompt_path = os.path.join(os.path.dirname(__file__), "user_prompt.txt")
+    if os.path.exists(user_prompt_path):
+        with open(user_prompt_path, "r", encoding="utf-8") as f:
+            user_instruction = f.read().strip()
+            if user_instruction:
+                full_instruction += f"\n\nUSER CUSTOM INSTRUCTIONS:\n{user_instruction}"
+
+    if user_profile:
+        full_instruction += f"\n\nUSER PROFILE: {user_profile}"
+    
+    return full_instruction
+
 def get_gemini_model(user_profile: str = ""):
     """Build and return a Gemini GenerativeModel with SAAITA system prompt."""
     try:
         import google.generativeai as genai
         genai.configure(api_key=GEMINI_API_KEY)
-
-        prompt_path = os.path.join(os.path.dirname(__file__), "system_prompt.txt")
-        with open(prompt_path, "r", encoding="utf-8") as f:
-            base_instruction = f.read().strip()
-
-        full_instruction = base_instruction
-        
-        user_prompt_path = os.path.join(os.path.dirname(__file__), "user_prompt.txt")
-        if os.path.exists(user_prompt_path):
-            with open(user_prompt_path, "r", encoding="utf-8") as f:
-                user_instruction = f.read().strip()
-                if user_instruction:
-                    full_instruction += f"\n\nUSER CUSTOM INSTRUCTIONS:\n{user_instruction}"
-
-        if user_profile:
-            full_instruction += f"\n\nUSER PROFILE: {user_profile}"
+        full_instruction = get_system_instruction(user_profile)
 
         return genai.GenerativeModel(
             "gemini-2.0-flash",
@@ -78,6 +84,78 @@ def get_gemini_model(user_profile: str = ""):
         )
     except Exception as e:
         print(f"[SAAITA] Gemini model init error: {e}")
+        return None
+
+class LlamaCppChatSession:
+    def __init__(self, history, system_instruction):
+        self.history = history
+        self.system_instruction = system_instruction
+        self.llm = get_local_llm()
+
+    def send_message(self, prompt):
+        if not self.llm:
+            class DummyResponse:
+                def __init__(self, text):
+                    self.text = "Error: Local model failed to load or dependencies are missing."
+            return DummyResponse("Error: Local model failed to load or dependencies are missing.")
+            
+        messages = [{"role": "system", "content": self.system_instruction}]
+        
+        for msg in self.history:
+            role = "user" if msg["role"] == "user" else "assistant"
+            # Ensure text extraction is safe
+            text = msg.get("parts", [""])[0] if isinstance(msg.get("parts"), list) and msg["parts"] else ""
+            messages.append({"role": role, "content": text})
+            
+        messages.append({"role": "user", "content": prompt})
+        
+        try:
+            response = self.llm.create_chat_completion(
+                messages=messages,
+                temperature=0.7,
+                max_tokens=1024
+            )
+            reply = response["choices"][0]["message"]["content"]
+            
+            # Append to history so it mimics persistent chat
+            self.history.append({"role": "user", "parts": [prompt]})
+            self.history.append({"role": "model", "parts": [reply]})
+            
+            class DummyResponse:
+                def __init__(self, text):
+                    self.text = text
+            return DummyResponse(reply)
+        except Exception as e:
+            class DummyResponse:
+                def __init__(self, text):
+                    self.text = f"(Local Model Error) {str(e)}"
+            return DummyResponse(f"(Local Model Error) {str(e)}")
+
+LOCAL_LLM = None
+def get_local_llm():
+    global LOCAL_LLM
+    if LOCAL_LLM is not None:
+        return LOCAL_LLM
+    
+    try:
+        from huggingface_hub import hf_hub_download
+        print("[SAAITA] Downloading/Locating local GGUF model (~1.6GB). This might take a while on first run...")
+        repo_id = "bartowski/gemma-2-2b-it-GGUF"
+        filename = "gemma-2-2b-it-Q4_K_M.gguf"
+        
+        model_path = hf_hub_download(repo_id=repo_id, filename=filename)
+        print(f"[SAAITA] Model loaded from: {model_path}")
+        
+        from llama_cpp import Llama
+        LOCAL_LLM = Llama(
+            model_path=model_path,
+            n_ctx=2048,
+            n_threads=4,
+            verbose=False
+        )
+        return LOCAL_LLM
+    except Exception as e:
+        print(f"[SAAITA] Error loading local model: {e}")
         return None
 
 
@@ -96,7 +174,7 @@ def explain_image_with_gemini(image_bytes: bytes, mime_type: str = "image/jpeg")
 
 
 def get_or_create_ai_session(session_id: str, user_id: int, onboarding_data: str = ""):
-    """Get existing Gemini chat session or create a new one."""
+    """Get existing AI chat session or create a new one based on active provider."""
     if session_id in ai_sessions:
         return ai_sessions[session_id]
 
@@ -113,11 +191,18 @@ def get_or_create_ai_session(session_id: str, user_id: int, onboarding_data: str
         role = "user" if row["sender"] == "user" else "model"
         formatted_history.append({"role": role, "parts": [row["text"]]})
 
-    model = get_gemini_model(onboarding_data or "")
-    if model is None:
-        return None
+    env_keys = read_env_file()
+    provider = env_keys.get("AI_PROVIDER", "gemini")
 
-    chat = model.start_chat(history=formatted_history)
+    if provider == "local_native":
+        system_instruction = get_system_instruction(onboarding_data or "")
+        chat = LlamaCppChatSession(formatted_history, system_instruction)
+    else:
+        model_obj = get_gemini_model(onboarding_data or "")
+        if model_obj is None:
+            return None
+        chat = model_obj.start_chat(history=formatted_history)
+
     new_group_id = str(uuid.uuid4())
 
     ai_sessions[session_id] = {
@@ -344,8 +429,11 @@ def chat_message():
     if not user:
         return jsonify({"error": "Session expired or invalid."}), 401
 
-    if not GEMINI_API_KEY:
-        return jsonify({"error": "AI service is not configured. Please add GEMINI_API_KEY to backend .env"}), 503
+    env_keys = read_env_file()
+    provider = env_keys.get("AI_PROVIDER", "gemini")
+
+    if provider == "gemini" and not GEMINI_API_KEY:
+        return jsonify({"error": "Gemini AI service is not configured. Please add GEMINI_API_KEY to backend .env"}), 503
 
     data = request.json or {}
     prompt = data.get("prompt", "").strip()
@@ -366,9 +454,12 @@ def chat_message():
         image_descriptions = []
         for idx, img in enumerate(images):
             try:
-                img_bytes = base64.b64decode(img["data"])
-                desc = explain_image_with_gemini(img_bytes, img.get("mime_type", "image/jpeg"))
-                image_descriptions.append(f"Image {idx + 1}: {desc}")
+                if provider == "gemini":
+                    img_bytes = base64.b64decode(img["data"])
+                    desc = explain_image_with_gemini(img_bytes, img.get("mime_type", "image/jpeg"))
+                    image_descriptions.append(f"Image {idx + 1}: {desc}")
+                else:
+                    image_descriptions.append(f"Image {idx + 1}: (Image processing skipped; requires Gemini provider)")
             except Exception as e:
                 image_descriptions.append(f"Image {idx + 1}: (failed to process)")
 
@@ -441,9 +532,15 @@ def chat_clear():
         ai_sess = ai_sessions[session_id]
         ai_sess["chat_group_id"] = new_group_id
         # Reinitialize Gemini chat with empty history
-        model = get_gemini_model(user.get("onboarding_data", ""))
-        if model:
-            ai_sess["chat"] = model.start_chat(history=[])
+        env_keys = read_env_file()
+        provider = env_keys.get("AI_PROVIDER", "gemini")
+        if provider == "local_native":
+            sys_inst = get_system_instruction(user.get("onboarding_data", ""))
+            ai_sess["chat"] = LlamaCppChatSession([], sys_inst)
+        else:
+            model = get_gemini_model(user.get("onboarding_data", ""))
+            if model:
+                ai_sess["chat"] = model.start_chat(history=[])
 
     return jsonify({"success": True, "chat_group_id": new_group_id})
 
@@ -477,10 +574,16 @@ def update_system_prompt():
     for sid, ai_sess in list(ai_sessions.items()):
         user = get_session_user(sid)
         if user:
-            model = get_gemini_model(user.get("onboarding_data", ""))
-            if model:
-                history = ai_sess["chat"].history if "chat" in ai_sess else []
-                ai_sess["chat"] = model.start_chat(history=history)
+            env_keys = read_env_file()
+            provider = env_keys.get("AI_PROVIDER", "gemini")
+            history = ai_sess.get("chat").history if "chat" in ai_sess else []
+            if provider == "local_native":
+                sys_inst = get_system_instruction(user.get("onboarding_data", ""))
+                ai_sess["chat"] = LlamaCppChatSession(history, sys_inst)
+            else:
+                model = get_gemini_model(user.get("onboarding_data", ""))
+                if model:
+                    ai_sess["chat"] = model.start_chat(history=history)
                 
     return jsonify({"success": True})
 
@@ -533,8 +636,44 @@ def update_api_keys():
         for k, v in all_keys.items():
             f.write(f"{k}={v}\n")
             
-    # Optional: Reinitialize active sessions if GEMINI key changed (omitted for brevity unless strictly needed, updating env is enough for next calls)
             
+    return jsonify({"success": True})
+
+@app.route("/api/settings/provider", methods=["GET"])
+def get_provider():
+    session_id = request.headers.get("X-Session-Id")
+    if not session_id or not get_session_user(session_id):
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    all_keys = read_env_file()
+    provider = all_keys.get("AI_PROVIDER", "gemini")
+    return jsonify({"provider": provider})
+
+@app.route("/api/settings/provider", methods=["POST"])
+def update_provider():
+    session_id = request.headers.get("X-Session-Id")
+    if not session_id or not get_session_user(session_id):
+        return jsonify({"error": "Unauthorized"}), 401
+        
+    data = request.json or {}
+    provider = data.get("provider", "gemini")
+    
+    env_path = os.path.join(os.path.dirname(__file__), ".env")
+    all_keys = read_env_file()
+    all_keys["AI_PROVIDER"] = provider
+    
+    # We remove keys that are now unused but were there for LMStudio
+    all_keys.pop("LM_STUDIO_MODEL", None)
+    all_keys.pop("LM_STUDIO_ENDPOINT", None)
+    
+    with open(env_path, "w", encoding="utf-8") as f:
+        for k, v in all_keys.items():
+            f.write(f"{k}={v}\n")
+            
+    # Force re-init of AI sessions on next message
+    global ai_sessions
+    ai_sessions.clear()
+
     return jsonify({"success": True})
 
 # =========================================================

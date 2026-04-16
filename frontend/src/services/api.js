@@ -140,3 +140,17 @@ export async function apiUpdateApiKeys(keys) {
     body: JSON.stringify({ keys }),
   });
 }
+
+export async function apiGetProvider() {
+  return await safeFetch(`${BASE_URL}/api/settings/provider`, {
+    headers: authHeaders(),
+  });
+}
+
+export async function apiUpdateProvider(data) {
+  return await safeFetch(`${BASE_URL}/api/settings/provider`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify(data),
+  });
+}
