@@ -1,0 +1,156 @@
+const BASE_URL = "http://127.0.0.1:5000";
+
+function getSessionId() {
+  return localStorage.getItem("session_id");
+}
+
+function authHeaders() {
+  const sid = getSessionId();
+  return {
+    "Content-Type": "application/json",
+    ...(sid ? { "X-Session-Id": sid } : {}),
+  };
+}
+
+async function handleResponse(res) {
+  let data;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error("Server returned an unexpected response. Please try again.");
+  }
+  if (!res.ok) throw new Error(data.error || "Something went wrong. Please try again.");
+  return data;
+}
+
+async function safeFetch(url, options) {
+  try {
+    const res = await fetch(url, options);
+    return await handleResponse(res);
+  } catch (err) {
+    if (err instanceof TypeError && err.message.includes("fetch")) {
+      throw new Error("Cannot connect to the server. Please make sure the backend is running.");
+    }
+    throw err;
+  }
+}
+
+// ─── Auth ───────────────────────────────────────────────
+
+export async function apiSignup({ fullName, email, password }) {
+  const data = await safeFetch(`${BASE_URL}/api/auth/signup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fullName, email, password }),
+  });
+  localStorage.setItem("session_id", data.session_id);
+  localStorage.setItem("user", JSON.stringify(data.user));
+  return data;
+}
+
+export async function apiLogin({ email, password }) {
+  const data = await safeFetch(`${BASE_URL}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  localStorage.setItem("session_id", data.session_id);
+  localStorage.setItem("user", JSON.stringify(data.user));
+  return data;
+}
+
+export async function apiLogout() {
+  try {
+    await fetch(`${BASE_URL}/api/auth/logout`, {
+      method: "POST",
+      headers: authHeaders(),
+    });
+  } catch {
+    // Even if logout request fails, clear local session
+  }
+  localStorage.removeItem("session_id");
+  localStorage.removeItem("user");
+}
+
+export async function apiGetMe() {
+  return await safeFetch(`${BASE_URL}/api/auth/me`, {
+    headers: authHeaders(),
+  });
+}
+
+export async function apiOnboarding(data) {
+  const res = await safeFetch(`${BASE_URL}/api/auth/onboarding`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify(data),
+  });
+  localStorage.setItem("user", JSON.stringify(res.user));
+  return res;
+}
+
+// ─── Chat ────────────────────────────────────────────────
+
+export async function apiChatMessage({ prompt, images = [] }) {
+  return await safeFetch(`${BASE_URL}/api/chat/message`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ prompt, images }),
+  });
+}
+
+export async function apiChatHistory() {
+  return await safeFetch(`${BASE_URL}/api/chat/history`, {
+    headers: authHeaders(),
+  });
+}
+
+export async function apiChatClear() {
+  return await safeFetch(`${BASE_URL}/api/chat/clear`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+}
+
+// ─── Settings ─────────────────────────────────────────────
+
+export async function apiGetSystemPrompt() {
+  return await safeFetch(`${BASE_URL}/api/system_prompt`, {
+    headers: authHeaders(),
+  });
+}
+
+export async function apiUpdateSystemPrompt(prompt) {
+  return await safeFetch(`${BASE_URL}/api/system_prompt`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ prompt }),
+  });
+}
+
+export async function apiGetApiKeys() {
+  return await safeFetch(`${BASE_URL}/api/settings/keys`, {
+    headers: authHeaders(),
+  });
+}
+
+export async function apiUpdateApiKeys(keys) {
+  return await safeFetch(`${BASE_URL}/api/settings/keys`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ keys }),
+  });
+}
+
+export async function apiGetProvider() {
+  return await safeFetch(`${BASE_URL}/api/settings/provider`, {
+    headers: authHeaders(),
+  });
+}
+
+export async function apiUpdateProvider(data) {
+  return await safeFetch(`${BASE_URL}/api/settings/provider`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify(data),
+  });
+}
